@@ -8,7 +8,7 @@
  * @format
  */
 
-import React, {VFC} from 'react';
+import React, {useCallback, VFC} from 'react';
 import {
   SafeAreaView,
   StyleSheet,
@@ -23,13 +23,24 @@ const row = [0, 1, 2, 3, 4, 5, 6];
 type RowProps = {
   prefix: number;
 };
+
+let blurTimeStamp: number = 0;
 const Row: VFC<RowProps> = props => {
+  const onFocus = useCallback(() => {
+    console.log(`test: onFocus: diff: ${Date.now() - blurTimeStamp}`);
+  }, []);
+  const onBlur = useCallback(() => {
+    console.log('test: onBlur');
+    blurTimeStamp = Date.now();
+  }, []);
   return (
     <View style={styles.row}>
       {row.map(key => (
         <TouchableOpacity
           key={`${props.prefix}-${key}`}
           style={styles.touchable}
+          onFocus={onFocus}
+          onBlur={onBlur}
         />
       ))}
     </View>
@@ -45,7 +56,7 @@ const App = () => {
   return (
     <SafeAreaView style={backgroundStyle}>
       {row.map(key => (
-        <Row prefix={key} />
+        <Row key={key} prefix={key} />
       ))}
     </SafeAreaView>
   );
