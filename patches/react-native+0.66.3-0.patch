@@ -1,9 +1,9 @@
 diff --git a/node_modules/react-native/Libraries/Components/AppleTV/TVFocusEventHandler.js b/node_modules/react-native/Libraries/Components/AppleTV/TVFocusEventHandler.js
 new file mode 100644
-index 0000000..afcc9b6
+index 0000000..ac0839b
 --- /dev/null
 +++ b/node_modules/react-native/Libraries/Components/AppleTV/TVFocusEventHandler.js
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,54 @@
 +/**
 + * Copyright (c) Facebook, Inc. and its affiliates.
 + *
@@ -14,50 +14,118 @@ index 0000000..afcc9b6
 + * @flow
 + */
 +
-+ 'use strict';
++'use strict';
 +
-+ import NativeEventEmitter from '../../EventEmitter/NativeEventEmitter';
-+ import Platform from '../../Utilities/Platform';
-+ import {type EventSubscription} from '../../vendor/emitter/EventEmitter';
-+ import NativeTVNavigationEventEmitter from './NativeTVNavigationEventEmitter';
-+ 
-+ class TVFocusEventHandler {
-+   __nativeTVNavigationEventListener: ?EventSubscription = null;
-+   __nativeTVNavigationEventEmitter: ?NativeEventEmitter = null;
-+   __callbackMap: Map<any, Function> = new Map();
-+ 
-+   constructor() {
-+     if (Platform.OS === 'ios' && !NativeTVNavigationEventEmitter) {
-+       return;
-+     }
-+ 
-+     this.__nativeTVNavigationEventEmitter = new NativeEventEmitter(
-+       NativeTVNavigationEventEmitter,
-+     );
-+     this.__nativeTVNavigationEventListener = this.__nativeTVNavigationEventEmitter.addListener(
-+       'onHWKeyEvent',
-+       data => {
-+         const callback = this.__callbackMap.get(data.tag);
-+         if (callback) {
-+           callback(data);
-+         }
-+       },
-+     );
-+   }
-+ 
-+   enable(componentTag: ?any, callback: Function): void {
-+     this.__callbackMap.set(componentTag, callback);
-+   }
-+ 
-+   disable(componentTag: ?any): void {
-+     this.__callbackMap.delete(componentTag);
-+   }
-+ }
-+ 
-+ module.exports = TVFocusEventHandler;
-\ No newline at end of file
++import NativeEventEmitter from '../../EventEmitter/NativeEventEmitter';
++import Platform from '../../Utilities/Platform';
++import {type EventSubscription} from '../../vendor/emitter/EventEmitter';
++import NativeTVNavigationEventEmitter from './NativeTVNavigationEventEmitter';
++
++class TVFocusEventHandler {
++  __nativeTVNavigationEventListener: ?EventSubscription = null;
++  __nativeTVNavigationEventEmitter: ?NativeEventEmitter = null;
++  __callbackMap: Map<any, Function> = new Map();
++
++  constructor() {
++    if (Platform.OS === 'ios' && !NativeTVNavigationEventEmitter) {
++      return;
++    }
++
++    this.__nativeTVNavigationEventEmitter = new NativeEventEmitter(
++      NativeTVNavigationEventEmitter,
++    );
++    this.__nativeTVNavigationEventListener =
++      this.__nativeTVNavigationEventEmitter.addListener(
++        'onHWKeyEvent',
++        data => {
++          const callback = this.__callbackMap.get(data.tag);
++          if (callback) {
++            callback(data);
++          }
++        },
++      );
++  }
++
++  register(componentTag: ?any, callback: Function): void {
++    this.__callbackMap.set(componentTag, callback);
++  }
++
++  unregister(componentTag: ?any): void {
++    this.__callbackMap.delete(componentTag);
++  }
++}
++
++export const tvFocusEventHandler: TVFocusEventHandler | null = Platform.isTV
++  ? new TVFocusEventHandler()
++  : null;
+diff --git a/node_modules/react-native/Libraries/Components/Pressable/Pressable.js b/node_modules/react-native/Libraries/Components/Pressable/Pressable.js
+index 82a6736..efca390 100644
+--- a/node_modules/react-native/Libraries/Components/Pressable/Pressable.js
++++ b/node_modules/react-native/Libraries/Components/Pressable/Pressable.js
+@@ -26,8 +26,8 @@ import {normalizeRect, type RectOrSize} from '../../StyleSheet/Rect';
+ import type {LayoutEvent, PressEvent} from '../../Types/CoreEventTypes';
+ import View from '../View/View';
+ import typeof TVParallaxPropertiesType from '../AppleTV/TVViewPropTypes';
+-import useTVEventHandler from '../AppleTV/useTVEventHandler';
+ import Platform from '../../Utilities/Platform';
++import {tvFocusEventHandler} from '../AppleTV/TVFocusEventHandler';
+ 
+ type ViewStyleProp = $ElementType<React.ElementConfig<typeof View>, 'style'>;
+ 
+@@ -269,9 +269,14 @@ function Pressable(props: Props, forwardedRef): React.Node {
+   );
+   const eventHandlers = usePressability(config);
+ 
+-  const pressableTVEventHandler = (evt: Event) => {
+-    if (props.isTVSelectable !== false || props.focusable !== false) {
+-      if (viewRef?.current?._nativeTag === evt.target) {
++  React.useEffect(() => {
++    if (!tvFocusEventHandler) {
++      return;
++    }
++    const viewTag = viewRef?.current?._nativeTag;
++    console.log(`test: registering handler: ${viewTag}`);
++    tvFocusEventHandler.register(viewTag, (evt: Event) => {
++      if (isTVSelectable !== false || focusable !== false) {
+         if (evt?.eventType === 'focus') {
+           setFocused(true);
+           onFocus && onFocus(evt);
+@@ -280,7 +285,7 @@ function Pressable(props: Props, forwardedRef): React.Node {
+           setFocused(false);
+         }
+       }
+-      // Use these on tvOS only.  Android press events go to onClick() so we don't
++      // Use these on tvOS only. Android press events go to onClick() so we don't
+       // need to call onPress() again here
+       if (Platform.isTVOS) {
+         if (focused && evt.eventType === 'select') {
+@@ -290,9 +295,21 @@ function Pressable(props: Props, forwardedRef): React.Node {
+           onLongPress && onLongPress(evt);
+         }
+       }
+-    }
+-  };
+-  useTVEventHandler(pressableTVEventHandler);
++    });
++    return () => {
++      if (tvFocusEventHandler) {
++        tvFocusEventHandler.unregister(viewTag);
++      }
++    };
++  }, [
++    focused,
++    onBlur,
++    onFocus,
++    onLongPress,
++    onPress,
++    focusable,
++    isTVSelectable,
++  ]);
+ 
+   return (
+     <View
 diff --git a/node_modules/react-native/Libraries/Components/Touchable/Touchable.js b/node_modules/react-native/Libraries/Components/Touchable/Touchable.js
-index 00592b5..7ef93a2 100644
+index 00592b5..1708ed0 100644
 --- a/node_modules/react-native/Libraries/Components/Touchable/Touchable.js
 +++ b/node_modules/react-native/Libraries/Components/Touchable/Touchable.js
 @@ -15,7 +15,7 @@ import Platform from '../../Utilities/Platform';
@@ -65,19 +133,11 @@ index 00592b5..7ef93a2 100644
  import UIManager from '../../ReactNative/UIManager';
  import SoundManager from '../Sound/SoundManager';
 -import TVEventHandler from '../AppleTV/TVEventHandler';
-+import TVFocusEventHandler from '../AppleTV/TVFocusEventHandler';
++import {tvFocusEventHandler} from '../AppleTV/TVFocusEventHandler';
  
  import {PressabilityDebugView} from '../../Pressability/PressabilityDebug';
  
-@@ -296,6 +296,7 @@ const LONG_PRESS_DELAY_MS = LONG_PRESS_THRESHOLD - HIGHLIGHT_DELAY_MS;
- 
- const LONG_PRESS_ALLOWED_MOVEMENT = 10;
- 
-+const tvFocusEventHandler = Platform.isTV ? new TVFocusEventHandler() : null;
- // Default amount "active" region protrudes beyond box
- 
- /**
-@@ -364,24 +365,21 @@ const LONG_PRESS_ALLOWED_MOVEMENT = 10;
+@@ -364,24 +364,21 @@ const LONG_PRESS_ALLOWED_MOVEMENT = 10;
   */
  const TouchableMixin = {
    componentDidMount: function() {
@@ -90,7 +150,7 @@ index 00592b5..7ef93a2 100644
 -    this._tvEventHandler.enable(this, function(cmp, evt) {
 -      const myTag = ReactNative.findNodeHandle(cmp);
 +    this._componentTag = ReactNative.findNodeHandle(this);
-+    tvFocusEventHandler.enable(this._componentTag, evt => {
++    tvFocusEventHandler.register(this._componentTag, evt => {
        evt.dispatchConfig = {};
 -      if (myTag === evt.tag) {
 -        if (evt.eventType === 'focus') {
@@ -113,7 +173,7 @@ index 00592b5..7ef93a2 100644
        }
      });
    },
-@@ -390,9 +388,8 @@ const TouchableMixin = {
+@@ -390,9 +387,8 @@ const TouchableMixin = {
     * Clear all timeouts on unmount
     */
    componentWillUnmount: function() {
@@ -121,7 +181,7 @@ index 00592b5..7ef93a2 100644
 -      this._tvEventHandler.disable();
 -      delete this._tvEventHandler;
 +    if (tvFocusEventHandler) {
-+      tvFocusEventHandler.disable(this._componentTag);
++      tvFocusEventHandler.unregister(this._componentTag);
      }
      this.touchableDelayTimeout && clearTimeout(this.touchableDelayTimeout);
      this.longPressDelayTimeout && clearTimeout(this.longPressDelayTimeout);
@@ -147,3 +207,11 @@ index c9e53cb..acf05b0 100644
    get TVFocusGuideView(): TVFocusGuideView {
      return require('./Libraries/Components/AppleTV/TVFocusGuideView');
    },
+diff --git a/node_modules/react-native/scripts/.packager.env b/node_modules/react-native/scripts/.packager.env
+new file mode 100644
+index 0000000..21a13cf
+--- /dev/null
++++ b/node_modules/react-native/scripts/.packager.env
+@@ -0,0 +1 @@
++export RCT_METRO_PORT=8081
+\ No newline at end of file
