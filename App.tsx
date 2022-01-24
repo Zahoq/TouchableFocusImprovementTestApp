@@ -10,7 +10,7 @@
 
 import React, {useCallback, VFC} from 'react';
 import {
-  SafeAreaView,
+  ScrollView,
   StyleSheet,
   TouchableOpacity,
   useColorScheme,
@@ -19,7 +19,7 @@ import {
 
 import {Colors} from 'react-native/Libraries/NewAppScreen';
 
-const row = [0, 1, 2, 3, 4, 5, 6];
+const row = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 type RowProps = {
   prefix: number;
 };
@@ -54,11 +54,11 @@ const App = () => {
   };
 
   return (
-    <SafeAreaView style={backgroundStyle}>
+    <ScrollView style={backgroundStyle}>
       {row.map(key => (
         <Row key={key} prefix={key} />
       ))}
-    </SafeAreaView>
+    </ScrollView>
   );
 };
 
