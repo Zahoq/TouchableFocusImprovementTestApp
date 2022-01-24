@@ -1,0 +1,149 @@
+diff --git a/node_modules/react-native/Libraries/Components/AppleTV/TVFocusEventHandler.js b/node_modules/react-native/Libraries/Components/AppleTV/TVFocusEventHandler.js
+new file mode 100644
+index 0000000..afcc9b6
+--- /dev/null
++++ b/node_modules/react-native/Libraries/Components/AppleTV/TVFocusEventHandler.js
+@@ -0,0 +1,51 @@
++/**
++ * Copyright (c) Facebook, Inc. and its affiliates.
++ *
++ * This source code is licensed under the MIT license found in the
++ * LICENSE file in the root directory of this source tree.
++ *
++ * @format
++ * @flow
++ */
++
++ 'use strict';
++
++ import NativeEventEmitter from '../../EventEmitter/NativeEventEmitter';
++ import Platform from '../../Utilities/Platform';
++ import {type EventSubscription} from '../../vendor/emitter/EventEmitter';
++ import NativeTVNavigationEventEmitter from './NativeTVNavigationEventEmitter';
++ 
++ class TVFocusEventHandler {
++   __nativeTVNavigationEventListener: ?EventSubscription = null;
++   __nativeTVNavigationEventEmitter: ?NativeEventEmitter = null;
++   __callbackMap: Map<any, Function> = new Map();
++ 
++   constructor() {
++     if (Platform.OS === 'ios' && !NativeTVNavigationEventEmitter) {
++       return;
++     }
++ 
++     this.__nativeTVNavigationEventEmitter = new NativeEventEmitter(
++       NativeTVNavigationEventEmitter,
++     );
++     this.__nativeTVNavigationEventListener = this.__nativeTVNavigationEventEmitter.addListener(
++       'onHWKeyEvent',
++       data => {
++         const callback = this.__callbackMap.get(data.tag);
++         if (callback) {
++           callback(data);
++         }
++       },
++     );
++   }
++ 
++   enable(componentTag: ?any, callback: Function): void {
++     this.__callbackMap.set(componentTag, callback);
++   }
++ 
++   disable(componentTag: ?any): void {
++     this.__callbackMap.delete(componentTag);
++   }
++ }
++ 
++ module.exports = TVFocusEventHandler;
+\ No newline at end of file
+diff --git a/node_modules/react-native/Libraries/Components/Touchable/Touchable.js b/node_modules/react-native/Libraries/Components/Touchable/Touchable.js
+index 00592b5..7ef93a2 100644
+--- a/node_modules/react-native/Libraries/Components/Touchable/Touchable.js
++++ b/node_modules/react-native/Libraries/Components/Touchable/Touchable.js
+@@ -15,7 +15,7 @@ import Platform from '../../Utilities/Platform';
+ import Position from './Position';
+ import UIManager from '../../ReactNative/UIManager';
+ import SoundManager from '../Sound/SoundManager';
+-import TVEventHandler from '../AppleTV/TVEventHandler';
++import TVFocusEventHandler from '../AppleTV/TVFocusEventHandler';
+ 
+ import {PressabilityDebugView} from '../../Pressability/PressabilityDebug';
+ 
+@@ -296,6 +296,7 @@ const LONG_PRESS_DELAY_MS = LONG_PRESS_THRESHOLD - HIGHLIGHT_DELAY_MS;
+ 
+ const LONG_PRESS_ALLOWED_MOVEMENT = 10;
+ 
++const tvFocusEventHandler = Platform.isTV ? new TVFocusEventHandler() : null;
+ // Default amount "active" region protrudes beyond box
+ 
+ /**
+@@ -364,24 +365,21 @@ const LONG_PRESS_ALLOWED_MOVEMENT = 10;
+  */
+ const TouchableMixin = {
+   componentDidMount: function() {
+-    if (!Platform.isTV) {
++    if (!tvFocusEventHandler) {
+       return;
+     }
+ 
+-    this._tvEventHandler = new TVEventHandler();
+-    this._tvEventHandler.enable(this, function(cmp, evt) {
+-      const myTag = ReactNative.findNodeHandle(cmp);
++    this._componentTag = ReactNative.findNodeHandle(this);
++    tvFocusEventHandler.enable(this._componentTag, evt => {
+       evt.dispatchConfig = {};
+-      if (myTag === evt.tag) {
+-        if (evt.eventType === 'focus') {
+-          cmp.touchableHandleFocus(evt);
+-        } else if (evt.eventType === 'blur') {
+-          cmp.touchableHandleBlur(evt);
+-        } else if (evt.eventType === 'select' && Platform.OS !== 'android') {
+-          cmp.touchableHandlePress &&
+-            !cmp.props.disabled &&
+-            cmp.touchableHandlePress(evt);
+-        }
++      if (evt.eventType === 'focus') {
++        this.touchableHandleFocus(evt);
++      } else if (evt.eventType === 'blur') {
++        this.touchableHandleBlur(evt);
++      } else if (evt.eventType === 'select' && Platform.OS !== 'android') {
++        this.touchableHandlePress &&
++          !this.props.disabled &&
++          this.touchableHandlePress(evt);
+       }
+     });
+   },
+@@ -390,9 +388,8 @@ const TouchableMixin = {
+    * Clear all timeouts on unmount
+    */
+   componentWillUnmount: function() {
+-    if (this._tvEventHandler) {
+-      this._tvEventHandler.disable();
+-      delete this._tvEventHandler;
++    if (tvFocusEventHandler) {
++      tvFocusEventHandler.disable(this._componentTag);
+     }
+     this.touchableDelayTimeout && clearTimeout(this.touchableDelayTimeout);
+     this.longPressDelayTimeout && clearTimeout(this.longPressDelayTimeout);
+diff --git a/node_modules/react-native/index.js b/node_modules/react-native/index.js
+index c9e53cb..acf05b0 100644
+--- a/node_modules/react-native/index.js
++++ b/node_modules/react-native/index.js
+@@ -83,6 +83,7 @@ import typeof ToastAndroid from './Libraries/Components/ToastAndroid/ToastAndroi
+ import typeof * as TurboModuleRegistry from './Libraries/TurboModule/TurboModuleRegistry';
+ import typeof TabBarIOS from './Libraries/Components/TabBarIOS/TabBarIOS';
+ import typeof TVEventHandler from './Libraries/Components/AppleTV/TVEventHandler';
++import typeof TVFocusEventHandler from './Libraries/Components/AppleTV/TVFocusEventHandler';
+ import typeof TVFocusGuideView from './Libraries/Components/AppleTV/TVFocusGuideView';
+ import typeof TVMenuControl from './Libraries/Components/AppleTV/TVMenuControl';
+ import typeof TVTextScrollView from './Libraries/Components/AppleTV/TVTextScrollView';
+@@ -416,6 +417,9 @@ module.exports = {
+   get TVEventHandler(): TVEventHandler {
+     return require('./Libraries/Components/AppleTV/TVEventHandler');
+   },
++  get TVFocusEventHandler(): TVFocusEventHandler {
++    return require('./Libraries/Components/AppleTV/TVFocusEventHandler');
++  },
+   get TVFocusGuideView(): TVFocusGuideView {
+     return require('./Libraries/Components/AppleTV/TVFocusGuideView');
+   },
